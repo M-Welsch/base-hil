@@ -1,0 +1,48 @@
+fileops:
+    device_node: "/dev/BASE_USB_STICK"
+    mntdir: "/home/max/Desktop/mntdir"
+    testfile_temp_location: "/home/max/dummyfile"
+    testfile_name: "big_dummy_file"
+    testfile_size_gb: 0.4
+
+logging:
+    version: 1
+    disable_existing_loggers: False
+
+    formatters:
+        simple:
+            format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            datefmt: '%Y-%m-%d %H:%M:%S'
+
+    handlers:
+        console:
+            class: logging.StreamHandler
+            level: INFO
+            formatter: simple
+            stream: ext://sys.stdout
+
+        file:
+            class: logging.FileHandler
+            level: DEBUG
+            formatter: simple
+            mode: a
+
+    loggers:
+        development:
+            level: DEBUG
+            handlers: [console]
+            propagate: no
+
+        staging:
+            level: INFO
+            handlers: [console, file]
+            propagate: no
+
+        production:
+            level: WARNING
+            handlers: [file]
+            propagate: no
+
+    root:
+        level: DEBUG
+        handlers: [console, file]
