@@ -64,3 +64,11 @@ def cmd_power_hdd_on():
 
 def cmd_power_hdd_off():
     call_pcu('cmd power hdd off')
+
+
+def cmd_power_5v_on():
+    call_pcu('cmd power 5v on')
+
+
+def cmd_power_5v_off():
+    call_pcu('cmd power 5v off')

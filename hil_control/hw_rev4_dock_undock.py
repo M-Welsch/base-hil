@@ -1,5 +1,5 @@
 import logging
-from time import sleep
+from time import sleep, time
 import pandas as pd
 
 from common.logger import logger_init
@@ -9,13 +9,8 @@ from hil_control.file_ops import FileOps
 LOG = logging.getLogger(__name__)
 
 
-def dockingstate_good(dockingstate: str, command: str) -> bool:
-    if command == 'cmd undock' and dockingstate == 'pcu_dockingState1_undocked':
-        return True
-    elif command == 'cmd dock' and dockingstate == 'pcu_dockingState2_allDockedPwrOff':
-        return True
-    else:
-        return False
+def avg(l: list) -> float:
+    return sum(l)/len(l)
 
 
 class HwRev4DockUndock:
@@ -31,42 +26,66 @@ class HwRev4DockUndock:
         pcu.cmd_undock()
 
     def run(self, iterations: int) -> None:
+        pcu.cmd_power_5v_on()
         for i in range(iterations):
+            tick = time()
             pcu.cmd_dock()
             sleep(2)
+
+            self._check_dockingstate(good_state="pcu_dockingState2_allDockedPwrOff")
+
             dock_currents = pcu.get_currentlog()
             dock_df = pd.DataFrame(
                 {'iteration': [i] * len(dock_currents), 'current': dock_currents, 'command': ['dock'] * len(dock_currents)})
-            dockingstate_after_docking = pcu.get_dockingstate()
-            assert dockingstate_after_docking == "pcu_dockingState2_allDockedPwrOff"
+            sleep(1)
 
             pcu.cmd_power_hdd_on()
-            dockingstate_after_powering_hdd = pcu.get_dockingstate()
-            assert dockingstate_after_powering_hdd == "pcu_dockingState3_allDockedPwrOn"
+            self._check_dockingstate(good_state="pcu_dockingState3_allDockedPwrOn")
 
             datatransfer_rate_mb_per_s = self.file_ops.measure_datatransfer_rate()
 
             pcu.cmd_power_hdd_off()
-            dockingstate_after_unpowering_hdd = pcu.get_dockingstate()
-            assert dockingstate_after_unpowering_hdd == "pcu_dockingState2_allDockedPwrOff"
+            self._check_dockingstate(good_state="pcu_dockingState2_allDockedPwrOff")
 
             pcu.cmd_undock()
             sleep(2)
             undock_currents = pcu.get_currentlog()
             undock_df = pd.DataFrame({'iteration': [i] * len(undock_currents), 'current': undock_currents,
                                       'command': ['undock'] * len(undock_currents)})
-            dockingstate_after_undocking = pcu.get_dockingstate()
-            assert dockingstate_after_undocking == "pcu_dockingState1_undocked"
-            undocking_good = dockingstate_good(dockingstate_after_undocking, 'undock')
+            sleep(1)
+
+            self._check_dockingstate(good_state="pcu_dockingState1_undocked")
+
             sleep(0.5)
 
             self.df = pd.concat([self.df, dock_df, undock_df])
             self.results.append({
                 "dock_currents": dock_currents,
-                "dockingstate_after_docking": dockingstate_after_docking,
+                "dockingstate_after_docking": "deprecated",
                 "undock_currents": undock_currents,
-                "dockingstate_after_undocking": dockingstate_after_undocking,
-                "undocking_pass": undocking_good,
+                "dockingstate_after_undocking": "deprecated",
+                "undocking_pass": False,  # deprecated
                 "datatransfer_rate_mb_per_s": datatransfer_rate_mb_per_s
             })
+            tock = time()
+            LOG.info(
+                f"finished run {i}. "
+                f"Id_avg = {avg(dock_currents):.1f}, "
+                f"Id_max = {max(dock_currents):.1f}, "
+                f"Iud_avg {avg(undock_currents):.1f}, "
+                f"Iud_max = {max(undock_currents):.1f}, "
+                f"TR={datatransfer_rate_mb_per_s:.1f} MB/s, "
+                f"t = {tock-tick:.1f}s"
+            )
         self.file_ops.cleanup_locally()
+        pcu.cmd_power_5v_off()
+
+    def _check_dockingstate(self, good_state: str, maximum_trials: int = 2, delay_between_trials: float = 1):
+        trials = 0
+        while not (dockingstate := pcu.get_dockingstate()) == good_state:
+            if trials > maximum_trials:
+                raise AssertionError(f"having {dockingstate} instead of {good_state}. Tried {trials} times")
+            trials += 1
+            sleep(delay_between_trials)
+        LOG.debug(f"dockingstate correct after {trials+1} trials")
+

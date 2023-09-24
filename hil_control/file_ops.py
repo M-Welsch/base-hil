@@ -37,10 +37,10 @@ class FileOps:
         if not self.mounted():
             LOG.error("not mounted!")
             return DatatransferRate(0.0)
-        duration = self.copy_dummyfile_to_usbdrive()
+        transfer_rate = self.copy_dummyfile_to_usbdrive()
         self.cleanup_usbdrive()
         self.unmount()
-        return self.config["testfile_size_gb"] * 1000 / duration
+        return DatatransferRate(transfer_rate)  # self.config["testfile_size_gb"] * 1000 / duration
 
     def wait_for_device_node(self, timeout: float = 5):
         tick = time()
@@ -49,7 +49,13 @@ class FileOps:
             sleep(0.1)
 
     def mount(self):
-        subprocess.call(["mount", self.device_node.as_posix()])
+        max_trials = 3
+        trials = 0
+        while trials < max_trials:
+            if subprocess.call(["mount", self.device_node.as_posix()]) == 0:
+                return
+            sleep(2)
+        LOG.error(f"couldn't mount {self.device_node} withing {max_trials} trials")
 
     def unmount(self):
         subprocess.call(["umount", self.device_node.as_posix()])
@@ -68,12 +74,39 @@ class FileOps:
         return tock - tick
 
     def copy_dummyfile_to_usbdrive(self):
+        if not self.testfile_source.exists():
+            LOG.warning("dummyfile doesn't exist. Creating real quick ...")
+            self.create_big_dummy_file(self.config["testfile_size_gb"])
+        if not self.mount_dir.is_mount():
+            LOG.warning("USB Stick seems to be not mounted. Trying to mount now ...")
+            self.mount()
         tick = time()
         cmd = ["cp", self.testfile_source.as_posix(), self.testfile_target.as_posix()]
         LOG.debug(f"copying testfile with {' '.join(cmd)}")
         subprocess.call(cmd)
         tock = time()
-        return tock - tick
+        return self.config["testfile_size_gb"] * 1024 / (tock - tick)
+
+    def copy_dummyfile_to_usbdrive_rsync(self):  # buggy and ugly
+        if not self.testfile_source.exists():
+            LOG.warning("dummyfile doesn't exist. Creating real quick ...")
+            self.create_big_dummy_file(self.config["testfile_size_gb"])
+        if not self.mount_dir.is_mount():
+            LOG.warning("USB Stick seems to be not mounted. Trying to mount now ...")
+            self.mount()
+        cmd = ["rsync", self.testfile_source.as_posix(), self.testfile_target.as_posix()]
+        output = subprocess.check_output(cmd)
+        try:
+            lines = output.decode().split('\n')
+            speedline = [l for l in lines if l.startswith('sent')][0]
+            bytes_per_second = speedline.split('  ')[-1]  # like: '427.923.502,00 bytes/sec'
+            bytes_per_second.split(',')
+            tranfer_rate = int(bytes_per_second.split(',')[0].replace('.',''))
+        except Exception as e:
+            LOG.error(f"something went wrong here: {e}")
+            tranfer_rate = 0
+        return tranfer_rate / (1024 * 1024)
+
 
     def cleanup_usbdrive(self):
         subprocess.call(["rm", self.testfile_target])

@@ -3,7 +3,7 @@ fileops:
     mntdir: "/home/max/Desktop/mntdir"
     testfile_temp_location: "/home/max/dummyfile"
     testfile_name: "big_dummy_file"
-    testfile_size_gb: 0.4
+    testfile_size_gb: 1
 
 logging:
     version: 1
