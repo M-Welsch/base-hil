@@ -5,6 +5,7 @@ import pandas as pd
 from common.logger import logger_init
 import hil_control.hw_rev4_pcu_interface as pcu
 from hil_control.file_ops import FileOps
+from hil_control.testcase import Testcase
 
 LOG = logging.getLogger(__name__)
 
@@ -13,9 +14,9 @@ def avg(l: list) -> float:
     return sum(l)/len(l)
 
 
-class HwRev4DockUndock:
+class HwRev4DockUndock(Testcase):
     def __init__(self):
-        logger_init()
+        super().__init__()
         self.file_ops = FileOps()
         self.df = pd.DataFrame({'iteration': [], 'current': [], 'command': []})
         self.results = []

@@ -12,9 +12,9 @@ timestamp = datetime.now().strftime("%Y-%m-%d %H-%M")
 
 def logger_init():
     cfg = load_configfile()
-    cfg["logging"]["handlers"]["file"]["filename"] = Path.cwd() / f"{timestamp}.log"
+    cfg["logging"]["handlers"]["file"]["filename"] = Path.cwd()/f"log/{timestamp}.log"
     logging.config.dictConfig(cfg["logging"])
 
 
 def save_dataframe(df: pd.DataFrame):
-    df.to_pickle(f"{timestamp}.pcl")
+    df.to_pickle(f"result/{timestamp}.pcl")

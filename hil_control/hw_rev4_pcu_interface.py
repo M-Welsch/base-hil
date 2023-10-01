@@ -5,7 +5,7 @@ from serial import Serial
 LOG = logging.getLogger(__name__)
 
 
-def call_pcu(command) -> list:
+def call_pcu(command, stringify: bool = False) -> list:
     LOG.debug(f'calling pcu with {command}')
     outputs = []
     command_bytes = (command + '\r\n').encode()
@@ -18,6 +18,12 @@ def call_pcu(command) -> list:
             if out == b'':
                 all_read = True
     LOG.debug(f'returned {"".join([o.decode() for o in outputs])}')
+    if stringify:
+        try:
+            outputs = ''.join([o.decode() for o in outputs]).split('\n')
+            outputs = [o for o in outputs if o]
+        except Exception:
+            LOG.debug(f"couldn't preprocess call_pcu result: {[str(o) for o in outputs]}")
     return outputs
 
 
@@ -51,24 +57,45 @@ def get_currentlog():
 
 
 def cmd_dock():
-    call_pcu('cmd dock')
+    return call_pcu('cmd dock')
 
 
 def cmd_undock():
-    call_pcu('cmd undock')
+    return call_pcu('cmd undock')
 
 
 def cmd_power_hdd_on():
-    call_pcu('cmd power hdd on')
+    return call_pcu('cmd power hdd on')
 
 
 def cmd_power_hdd_off():
-    call_pcu('cmd power hdd off')
+    return call_pcu('cmd power hdd off')
 
 
 def cmd_power_5v_on():
-    call_pcu('cmd power 5v on')
+    return call_pcu('cmd power 5v on')
 
 
 def cmd_power_5v_off():
-    call_pcu('cmd power 5v off')
+    return call_pcu('cmd power 5v off')
+
+
+def cmd_power_bcu_on():
+    return call_pcu('cmd power bcu on')
+
+
+def cmd_power_bcu_off():
+    return call_pcu('cmd power bcu off')
+
+
+def cmd_shutdown_init():
+    return call_pcu('cmd shutdown init', stringify=True)
+
+
+def cmd_shutdown_abort():
+    return call_pcu('cmd shutdown abort', stringify=True)
+
+
+def cmd_wakeup():
+    return call_pcu('cmd wakeup', stringify=True)
+
