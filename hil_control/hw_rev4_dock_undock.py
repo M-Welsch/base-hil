@@ -23,11 +23,11 @@ class HwRev4DockUndock(Testcase):
 
     def prepare(self):
         self.file_ops.prepare()
-        pcu.cmd_power_hdd_off()
+        pcu.power(pcu.VoltageRail.hdd, pcu.DesiredState.off)
         pcu.cmd_undock()
 
     def run(self, iterations: int) -> None:
-        pcu.cmd_power_5v_on()
+        pcu.power(pcu.VoltageRail.fiveV, pcu.DesiredState.on)
         for i in range(iterations):
             tick = time()
             pcu.cmd_dock()
@@ -40,12 +40,13 @@ class HwRev4DockUndock(Testcase):
                 {'iteration': [i] * len(dock_currents), 'current': dock_currents, 'command': ['dock'] * len(dock_currents)})
             sleep(1)
 
-            pcu.cmd_power_hdd_on()
+            pcu.power(pcu.VoltageRail.hdd, pcu.DesiredState.on)
+
             self._check_dockingstate(good_state="pcu_dockingState3_allDockedPwrOn")
 
             datatransfer_rate_mb_per_s = self.file_ops.measure_datatransfer_rate()
 
-            pcu.cmd_power_hdd_off()
+            pcu.power(pcu.VoltageRail.hdd, pcu.DesiredState.off)
             self._check_dockingstate(good_state="pcu_dockingState2_allDockedPwrOff")
 
             pcu.cmd_undock()
@@ -79,7 +80,7 @@ class HwRev4DockUndock(Testcase):
                 f"t = {tock-tick:.1f}s"
             )
         self.file_ops.cleanup_locally()
-        pcu.cmd_power_5v_off()
+        pcu.power(pcu.VoltageRail.fiveV, pcu.DesiredState.off)
 
     def _check_dockingstate(self, good_state: str, maximum_trials: int = 2, delay_between_trials: float = 1):
         trials = 0

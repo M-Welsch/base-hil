@@ -1,4 +1,7 @@
 import logging
+from datetime import datetime
+from enum import Enum
+from typing import List
 
 from serial import Serial
 
@@ -56,6 +59,47 @@ def get_currentlog():
     return values
 
 
+def _filter_output_payload(pcu_outputs: List[str], command_sent: str) -> List[str]:
+    """
+    returns the usable string from the overall pcu output
+
+    pcu returns the command sent, its output, a prompt and an empty line like this
+    [b'get date now\r\n', b'00:00:00:542 - 01-01-2000\n', b'ch> ', b'']
+    only the second entry is relevant here
+
+    :param pcu_outputs:
+    :return:
+    """
+    for idx, pcu_output in enumerate(pcu_outputs):
+        if 'ch>' in pcu_output:
+            pcu_outputs.remove(pcu_output)
+            pcu_outputs.insert(idx, pcu_output.split('ch>')[1])
+        if any([
+            pcu_output == '',
+            command_sent in pcu_output
+        ]):
+            pcu_outputs.remove(pcu_output)
+    return pcu_outputs
+
+
+def call_pcu2(command):
+    LOG.debug(f'calling pcu with {command}')
+    outputs = []
+    command_bytes = (command + '\r\n').encode()
+    with Serial('/dev/ttyACM1', baudrate=38400, timeout=0.2) as ser:  # timeout is critical
+        ser.write(command_bytes)
+        all_read = False
+        while not all_read:
+            out = ser.read_until()
+            if out == b'':
+                all_read = True
+            else:
+                outputs.append(out)
+    LOG.debug(f'returned {"".join([o.decode() for o in outputs])}')
+    output_str = [po.decode().strip() for po in outputs]
+    return output_str
+
+
 def cmd_dock():
     return call_pcu('cmd dock')
 
@@ -64,38 +108,72 @@ def cmd_undock():
     return call_pcu('cmd undock')
 
 
-def cmd_power_hdd_on():
-    return call_pcu('cmd power hdd on')
+class Commands(Enum):
+    shutdown: str = "shutdown"
+    dock: str = "dock"
+    undock: str = "undock"
+    power: str = "power"
+    wakeup: str = "wakeup"
 
 
-def cmd_power_hdd_off():
-    return call_pcu('cmd power hdd off')
-
-
-def cmd_power_5v_on():
-    return call_pcu('cmd power 5v on')
-
-
-def cmd_power_5v_off():
-    return call_pcu('cmd power 5v off')
-
-
-def cmd_power_bcu_on():
-    return call_pcu('cmd power bcu on')
-
-
-def cmd_power_bcu_off():
-    return call_pcu('cmd power bcu off')
+def _send_command(command: Commands, *args):
+    command_str = "cmd " + command.value + ' ' + ' '.join(args)
+    output_raw = call_pcu2(command_str)
+    if not any([f"{command.value} successful" in output_line for output_line in output_raw]):
+        raise RuntimeError
+    retval = _filter_output_payload(output_raw, command_str)
+    return output_raw
 
 
 def cmd_shutdown_init():
-    return call_pcu('cmd shutdown init', stringify=True)
+    return _send_command(Commands.shutdown, 'init')
 
 
 def cmd_shutdown_abort():
-    return call_pcu('cmd shutdown abort', stringify=True)
+    return _send_command(Commands.shutdown, 'abort')
 
 
 def cmd_wakeup():
     return call_pcu('cmd wakeup', stringify=True)
 
+
+class DateKind(Enum):
+    now: str = "now"
+    backup: str = "backup"
+    wakeup: str = "wakeup"
+
+
+def _datetime_to_pcu_timestring(date: datetime) -> str:
+    return f"{date.year} {date.month} {date.day} {date.hour} {date.minute}"
+
+
+def _pcu_timestring_to_datetime(pcu_output: str) -> datetime:
+    return datetime.strptime(pcu_output, "%H:%M:%S - %d-%m-%Y")
+
+
+def set_date(date_kind: DateKind, date: datetime):
+    command = f"set date " + date_kind.value + " " + _datetime_to_pcu_timestring(date)
+    return call_pcu2(command)
+
+
+def get_date(date_kind: DateKind) -> datetime:
+    command = "get date " + date_kind.value
+    date_raw = call_pcu2(command)
+    datestr = _filter_output_payload(pcu_outputs=date_raw, command_sent=command)[0]
+    return _pcu_timestring_to_datetime(datestr)
+
+
+class VoltageRail(Enum):
+    hdd: str = "hdd"
+    fiveV: str = "5v"
+    bcu: str = "bcu"
+
+
+class DesiredState(Enum):
+    on: str = "on"
+    off: str = "off"
+
+
+def power(rail: VoltageRail, state: DesiredState):
+    command = "cmd power " + rail.value + " " + state.value
+    return call_pcu(command)

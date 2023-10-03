@@ -13,9 +13,9 @@ class HwRev4Statemachine(Testcase):
         self.results = []
 
     def prepare(self):
-        pcu.cmd_power_hdd_off()
-        pcu.cmd_power_bcu_off()
-        pcu.cmd_power_5v_off()
+        pcu.power(pcu.VoltageRail.hdd, pcu.DesiredState.off)
+        pcu.power(pcu.VoltageRail.bcu, pcu.DesiredState.off)
+        pcu.power(pcu.VoltageRail.fiveV, pcu.DesiredState.off)
 
     def issue_and_verify_shutdown_request(self):
         outputs = pcu.cmd_shutdown_init()
