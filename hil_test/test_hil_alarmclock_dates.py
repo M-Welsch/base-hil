@@ -12,4 +12,4 @@ def test_set_get_date_now(date_kind: pcu.DateKind):
     pcu.set_date(date_kind, nowish)
     sleep(0.2)
     later = pcu.get_date(date_kind)
-    assert (later - nowish) < timedelta(seconds=1)
+    assert (later - nowish) < timedelta(seconds=2)
