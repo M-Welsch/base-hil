@@ -1,8 +1,11 @@
+import asyncio
 import logging
 from datetime import datetime
 from enum import Enum
+from time import sleep
 from typing import List, Optional
 
+import serial
 from serial import Serial
 
 LOG = logging.getLogger(__name__)
@@ -25,10 +28,6 @@ class cmd:
     @staticmethod
     def undock():
         return cmd_undock()
-
-    @staticmethod
-    def wakeup():
-        return cmd_wakeup()
 
     class power:
         class hdd:
@@ -119,8 +118,8 @@ class get:
 class set:
     class date:
         @staticmethod
-        def now(timestamp: datetime):
-            return _set_date(date_kind=DateKind.now, date=timestamp)
+        async def now(timestamp: datetime):
+            return await _set_date(date_kind=DateKind.now, date=timestamp)
 
         @staticmethod
         def wakeup(timestamp: datetime):
@@ -131,13 +130,12 @@ class set:
             return _set_date(date_kind=DateKind.backup, date=timestamp)
 
 
-
-
-def call_pcu(command: str) -> List[str]:
+async def call_pcu(command: str) -> List[str]:
     LOG.debug(f'calling pcu with {command}')
     command_bytes = (command + '\r\n').encode()
-    with Serial('/dev/ttyACM1', baudrate=38400, timeout=0.5) as ser:  # timeout is critical
+    with Serial('/dev/ttyBASEPCU', baudrate=38400, timeout=0.5) as ser:  # timeout is critical
         ser.write(command_bytes)
+        await asyncio.sleep(0.5)
         output = ser.read_until('ch>')
     output = output.decode().split('\n')
     LOG.debug(f'received {output}')
@@ -176,9 +174,9 @@ class DigitalMeasurement(Enum):
     DOCKED: str = "DOCKED"
 
 
-def _get_dockingstate():
+async def _get_dockingstate():
     cmd = 'get dockingstate'
-    outp = call_pcu(cmd)
+    outp = await call_pcu(cmd)
     outp = _filter_output_payload(outp, cmd)[0]
     return DockingState(outp)
 
@@ -191,9 +189,9 @@ def _get_currentlog():
     return currents
 
 
-def get_wakeup_reason() -> WakeupReason:
+async def get_wakeup_reason() -> WakeupReason:
     cmd = 'get wakeupreason'
-    wr_raw = _filter_output_payload(call_pcu(cmd), cmd)[0]
+    wr_raw = _filter_output_payload(await call_pcu(cmd), cmd)[0]
     return WakeupReason(wr_raw)
 
 
@@ -222,20 +220,20 @@ def _filter_output_payload(pcu_outputs: List[str], command_sent: str) -> List[st
     return filtered
 
 
-def check_messages(timeout_secs: float) -> Optional[List[str]]:
-    with Serial('/dev/ttyACM1', baudrate=38400, timeout=timeout_secs) as ser:  # timeout is critical
+async def check_messages(timeout_secs: float) -> Optional[List[str]]:
+    with Serial('/dev/ttyBASEPCU', baudrate=38400, timeout=timeout_secs) as ser:  # timeout is critical
         output = ser.read_until()
     output = output.decode().split('\n')
     LOG.debug(f'received {output}')
     return [o.strip() for o in output]
 
 
-def cmd_dock():
-    return call_pcu('cmd dock')
+async def cmd_dock():
+    return await call_pcu('cmd dock')
 
 
-def cmd_undock():
-    return call_pcu('cmd undock')
+async def cmd_undock():
+    return await call_pcu('cmd undock')
 
 
 class Commands(Enum):
@@ -246,25 +244,25 @@ class Commands(Enum):
     wakeup: str = "wakeup"
 
 
-def _send_command(command: Commands, *args):
+async def _send_command(command: Commands, *args):
     command_str = "cmd " + command.value + ' ' + ' '.join(args)
-    output_raw = call_pcu(command_str)
+    output_raw = await call_pcu(command_str)
     if not any([f"{command.value} successful" in output_line for output_line in output_raw]):
         raise RuntimeError
     retval = _filter_output_payload(output_raw, command_str)
     return output_raw
 
 
-def cmd_shutdown_init():
-    return _send_command(Commands.shutdown, 'init')
+async def cmd_shutdown_init():
+    return await _send_command(Commands.shutdown, 'init')
 
 
-def cmd_shutdown_abort():
-    return _send_command(Commands.shutdown, 'abort')
+async def cmd_shutdown_abort():
+    return await _send_command(Commands.shutdown, 'abort')
 
 
 def cmd_wakeup():
-    return call_pcu('cmd wakeup')
+    return call_pcu('debugcmd wakeup')
 
 
 class DateKind(Enum):
@@ -281,14 +279,14 @@ def _pcu_timestring_to_datetime(pcu_output: str) -> datetime:
     return datetime.strptime(pcu_output, "%H:%M:%S - %d-%m-%Y")
 
 
-def _set_date(date_kind: DateKind, date: datetime):
+async def _set_date(date_kind: DateKind, date: datetime):
     command = f"set date " + date_kind.value + " " + _datetime_to_pcu_timestring(date)
-    return call_pcu(command)
+    return await call_pcu(command)
 
 
-def _get_date(date_kind: DateKind) -> datetime:
+async def _get_date(date_kind: DateKind) -> datetime:
     command = "get date " + date_kind.value
-    date_raw = call_pcu(command)
+    date_raw = await call_pcu(command)
     datestr = _filter_output_payload(pcu_outputs=date_raw, command_sent=command)[0]
     return _pcu_timestring_to_datetime(datestr)
 
@@ -304,6 +302,6 @@ class DesiredState(Enum):
     off: str = "off"
 
 
-def power(rail: VoltageRail, state: DesiredState):
+async def power(rail: VoltageRail, state: DesiredState):
     command = "cmd power " + rail.value + " " + state.value
-    return call_pcu(command)
+    return await call_pcu(command)

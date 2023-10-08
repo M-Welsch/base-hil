@@ -1,0 +1,3 @@
+# this has to go into /etc/udev/rules.d
+
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="b45e", SYMLINK+="ttyBASEPCU"

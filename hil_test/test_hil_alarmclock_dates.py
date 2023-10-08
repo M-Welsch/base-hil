@@ -7,10 +7,18 @@ import hil_control.hw_rev4_pcu_interface as pcu
 
 
 @pytest.mark.hardware_in_the_loop
-@pytest.mark.parametrize("date_kind", [pcu.DateKind.now, pcu.DateKind.backup, pcu.DateKind.wakeup])
-def test_set_get_date_now(date_kind: pcu.DateKind):
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "date_setter, date_getter",
+    [
+        (pcu.set.date.now, pcu.get.date.now),
+        (pcu.set.date.backup, pcu.get.date.backup),
+        (pcu.set.date.wakeup, pcu.get.date.wakeup),
+    ]
+)
+async def test_set_get_date_now(date_setter, date_getter):
     nowish = datetime(2000, 1, 1, 0, 0)
-    pcu._set_date(date_kind, nowish)
+    await date_setter(nowish)
     sleep(0.2)
-    later = pcu._get_date(date_kind)
+    later = await date_getter()
     assert (later - nowish) < timedelta(seconds=2)
