@@ -58,6 +58,41 @@ class cmd:
             def off():
                 return power(VoltageRail.bcu, DesiredState.off)
 
+
+class debugcmd:
+    @staticmethod
+    def wakeup():
+        return cmd_wakeup()
+
+    @staticmethod
+    def button_pressed(button_id: int):
+        if button_id < 2:
+            return call_pcu(f'debugcmd button_{button_id}_pressed')
+
+
+class get:
+    class date:
+        @staticmethod
+        def now():
+            return _get_date(date_kind=DateKind.now)
+
+        @staticmethod
+        def wakeup():
+            return _get_date(date_kind=DateKind.wakeup)
+
+        @staticmethod
+        def backup():
+            return _get_date(date_kind=DateKind.backup)
+
+    @staticmethod
+    def dockingstate():
+        return _get_dockingstate()
+
+    @staticmethod
+    def currentlog():
+        return _get_currentlog()
+
+
     class analog:
         @staticmethod
         def stator_supply_sense():
@@ -81,43 +116,19 @@ class cmd:
             raise NotImplementedError
 
 
-class get:
-    class date:
-        @staticmethod
-        def now():
-            return get_date(date_kind=DateKind.now)
-
-        @staticmethod
-        def wakeup():
-            return get_date(date_kind=DateKind.wakeup)
-
-        @staticmethod
-        def backup():
-            return get_date(date_kind=DateKind.backup)
-
-    @staticmethod
-    def dockingstate():
-        return get_dockingstate()
-
-    @staticmethod
-    def currentlog():
-        return get_currentlog()
-
-
 class set:
     class date:
         @staticmethod
         def now(timestamp: datetime):
-            return set_date(date_kind=DateKind.now, date=timestamp)
+            return _set_date(date_kind=DateKind.now, date=timestamp)
 
         @staticmethod
         def wakeup(timestamp: datetime):
-            return set_date(date_kind=DateKind.wakeup, date=timestamp)
+            return _set_date(date_kind=DateKind.wakeup, date=timestamp)
 
         @staticmethod
         def backup(timestamp: datetime):
-            return set_date(date_kind=DateKind.backup, date=timestamp)
-
+            return _set_date(date_kind=DateKind.backup, date=timestamp)
 
 
 
@@ -152,55 +163,32 @@ class WakeupReason(Enum):
     WAKEUP_REASON_SCHEDULED: str = "scheduled"
 
 
-def call_pcu_olf(command, stringify: bool = False) -> list:
-    LOG.debug(f'calling pcu with {command}')
-    outputs = []
-    command_bytes = (command + '\r\n').encode()
-    with Serial('/dev/ttyACM1', baudrate=38400, timeout=0.1) as ser:
-        ser.write(command_bytes)
-        all_read = False
-        while not all_read:
-            out = ser.read_until()
-            outputs.append(out)
-            if out == b'':
-                all_read = True
-    LOG.debug(f'returned {"".join([o.decode() for o in outputs])}')
-    if stringify:
-        try:
-            outputs = ''.join([o.decode() for o in outputs]).split('\n')
-            outputs = [o for o in outputs if o]
-        except Exception:
-            LOG.debug(f"couldn't preprocess call_pcu result: {[str(o) for o in outputs]}")
-    return outputs
+class AnalogMeasurement(Enum):
+    IMOTOR_PROT: str = "imotor_prot"
+    STATOR_SUPPLY_SENSE: str = "stator_supply_sense"
+    VIN12_MEAS: str = "vin12_meas"
 
 
-def get_dockingstate():
+class DigitalMeasurement(Enum):
+    HMI_BUTTON_0: str = "HMI_BUTTON_0"
+    HMI_BUTTON_1: str = "HMI_BUTTON_1"
+    UNDOCKED_ENDSWITCH: str = "UNDOCKED_ENDSWITCH"
+    DOCKED: str = "DOCKED"
+
+
+def _get_dockingstate():
     cmd = 'get dockingstate'
     outp = call_pcu(cmd)
     outp = _filter_output_payload(outp, cmd)[0]
     return DockingState(outp)
 
 
-def get_currentlog():
-    outp = call_pcu_olf('get currentlog')
-    if not outp:
-        outp = call_pcu_olf('get currentlog')
-    maxl = 0
-    maxlidx = 0
-    for idx, l in enumerate(outp):
-        if len(l) > maxl:
-            maxl = len(l)
-            maxlidx = idx
-    values_raw = outp[maxlidx].decode().strip().split(',')
-    values = []
-    for value_raw in values_raw:
-        if not value_raw:
-            continue
-        try:
-            values.append(int(value_raw))
-        except Exception:
-            values.append(0)
-    return values
+def _get_currentlog():
+    cmd = 'get currentlog'
+    response = call_pcu(cmd)
+    currents_raw = _filter_output_payload(response, cmd)
+    currents = [int(c) for c in currents_raw if c]
+    return currents
 
 
 def get_wakeup_reason() -> WakeupReason:
@@ -220,16 +208,18 @@ def _filter_output_payload(pcu_outputs: List[str], command_sent: str) -> List[st
     :param pcu_outputs:
     :return:
     """
-    for idx, pcu_output in enumerate(pcu_outputs):
+    filtered = []
+    for pcu_output in pcu_outputs:
         if 'ch>' in pcu_output:
-            pcu_outputs.remove(pcu_output)
-            pcu_outputs.insert(idx, pcu_output.split('ch>')[1])
-        if any([
-            command_sent in pcu_output
+            filtered.append(pcu_output.split('ch>')[1])
+        elif any([
+            command_sent in pcu_output,
         ]):
-            pcu_outputs.remove(pcu_output)
-        pcu_outputs = [pcu_output for pcu_output in pcu_outputs if pcu_output]
-    return pcu_outputs
+            continue
+        else:
+            filtered.append(pcu_output)
+    filtered = [filtered_item for filtered_item in filtered if filtered_item]
+    return filtered
 
 
 def check_messages(timeout_secs: float) -> Optional[List[str]]:
@@ -274,7 +264,7 @@ def cmd_shutdown_abort():
 
 
 def cmd_wakeup():
-    return call_pcu_olf('cmd wakeup', stringify=True)
+    return call_pcu('cmd wakeup')
 
 
 class DateKind(Enum):
@@ -291,12 +281,12 @@ def _pcu_timestring_to_datetime(pcu_output: str) -> datetime:
     return datetime.strptime(pcu_output, "%H:%M:%S - %d-%m-%Y")
 
 
-def set_date(date_kind: DateKind, date: datetime):
+def _set_date(date_kind: DateKind, date: datetime):
     command = f"set date " + date_kind.value + " " + _datetime_to_pcu_timestring(date)
     return call_pcu(command)
 
 
-def get_date(date_kind: DateKind) -> datetime:
+def _get_date(date_kind: DateKind) -> datetime:
     command = "get date " + date_kind.value
     date_raw = call_pcu(command)
     datestr = _filter_output_payload(pcu_outputs=date_raw, command_sent=command)[0]
