@@ -1,11 +1,17 @@
 import logging
 from datetime import datetime
 from enum import Enum
-from typing import List
+from typing import List, Optional
 
 from serial import Serial
 
 LOG = logging.getLogger(__name__)
+
+
+class cmd:
+    @staticmethod
+    def shutdown_init():
+        return cmd_shutdown_init()
 
 
 def call_pcu(command, stringify: bool = False) -> list:
@@ -59,6 +65,11 @@ def get_currentlog():
     return values
 
 
+def get_wakeup_reason():
+    cmd = 'get wakeupreason'
+    return _filter_output_payload(call_pcu2(cmd), cmd)[0]
+
+
 def _filter_output_payload(pcu_outputs: List[str], command_sent: str) -> List[str]:
     """
     returns the usable string from the overall pcu output
@@ -75,29 +86,30 @@ def _filter_output_payload(pcu_outputs: List[str], command_sent: str) -> List[st
             pcu_outputs.remove(pcu_output)
             pcu_outputs.insert(idx, pcu_output.split('ch>')[1])
         if any([
-            pcu_output == '',
             command_sent in pcu_output
         ]):
             pcu_outputs.remove(pcu_output)
+        pcu_outputs = [pcu_output for pcu_output in pcu_outputs if pcu_output]
     return pcu_outputs
 
 
-def call_pcu2(command):
+def call_pcu2(command: str) -> List[str]:
     LOG.debug(f'calling pcu with {command}')
-    outputs = []
     command_bytes = (command + '\r\n').encode()
-    with Serial('/dev/ttyACM1', baudrate=38400, timeout=0.2) as ser:  # timeout is critical
+    with Serial('/dev/ttyACM1', baudrate=38400, timeout=0.5) as ser:  # timeout is critical
         ser.write(command_bytes)
-        all_read = False
-        while not all_read:
-            out = ser.read_until()
-            if out == b'':
-                all_read = True
-            else:
-                outputs.append(out)
-    LOG.debug(f'returned {"".join([o.decode() for o in outputs])}')
-    output_str = [po.decode().strip() for po in outputs]
-    return output_str
+        output = ser.read_until('ch>')
+    output = output.decode().split('\n')
+    LOG.debug(f'received {output}')
+    return [o.strip() for o in output]
+
+
+def check_messages(timeout_secs: float) -> Optional[List[str]]:
+    with Serial('/dev/ttyACM1', baudrate=38400, timeout=timeout_secs) as ser:  # timeout is critical
+        output = ser.read_until()
+    output = output.decode().split('\n')
+    LOG.debug(f'received {output}')
+    return [o.strip() for o in output]
 
 
 def cmd_dock():
