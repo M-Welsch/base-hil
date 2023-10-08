@@ -130,17 +130,18 @@ class set:
             return _set_date(date_kind=DateKind.backup, date=timestamp)
 
 
-async def call_pcu(command: str) -> List[str]:
+async def call_pcu(command: str) -> str:
     LOG.debug(f'calling pcu with {command}')
     command_bytes = (command + '\r\n').encode()
-    with Serial('/dev/ttyBASEPCU', baudrate=38400, timeout=0.5) as ser:  # timeout is critical
+    with Serial('/dev/ttyBASEPCU', baudrate=38400, timeout=1) as ser:  # timeout is critical
         ser.write(command_bytes)
         await asyncio.sleep(0.5)
         output = ser.read_until('ch>')
     output = output.decode().split('\n')
     LOG.debug(f'received {output}')
     output = [o.strip() for o in output]
-    return _filter_output_payload(output, command)
+    filtered = _filter_output_payload(output, command)
+    return ", ".join(filtered)
 
 
 class DockingState(Enum):
@@ -177,7 +178,7 @@ class DigitalMeasurement(Enum):
 
 async def _get_dockingstate():
     cmd = 'get dockingstate'
-    outp = (await call_pcu(cmd))[0]
+    outp = await call_pcu(cmd)
     return DockingState(outp)
 
 
@@ -190,7 +191,7 @@ async def _get_currentlog():
 
 async def get_wakeup_reason() -> WakeupReason:
     cmd = 'get wakeupreason'
-    wr_raw = (await call_pcu(cmd))[0]
+    wr_raw = await call_pcu(cmd)
     return WakeupReason(wr_raw)
 
 
@@ -246,7 +247,7 @@ class Commands(Enum):
 async def _send_command(command: Commands, *args):
     command_str = "cmd " + command.value + ' ' + ' '.join(args)
     output_raw = await call_pcu(command_str)
-    if not any([f"{command.value} successful" in output_line for output_line in output_raw]):
+    if not f"{command.value} successful" in output_raw:
         raise RuntimeError
     return output_raw
 
@@ -284,7 +285,7 @@ async def _set_date(date_kind: DateKind, date: datetime):
 
 async def _get_date(date_kind: DateKind) -> datetime:
     command = "get date " + date_kind.value
-    datestr = (await call_pcu(command))[0]
+    datestr = await call_pcu(command)
     return _pcu_timestring_to_datetime(datestr)
 
 
