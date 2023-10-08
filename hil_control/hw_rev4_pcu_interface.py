@@ -139,7 +139,8 @@ async def call_pcu(command: str) -> List[str]:
         output = ser.read_until('ch>')
     output = output.decode().split('\n')
     LOG.debug(f'received {output}')
-    return [o.strip() for o in output]
+    output = [o.strip() for o in output]
+    return _filter_output_payload(output, command)
 
 
 class DockingState(Enum):
@@ -176,22 +177,20 @@ class DigitalMeasurement(Enum):
 
 async def _get_dockingstate():
     cmd = 'get dockingstate'
-    outp = await call_pcu(cmd)
-    outp = _filter_output_payload(outp, cmd)[0]
+    outp = (await call_pcu(cmd))[0]
     return DockingState(outp)
 
 
-def _get_currentlog():
+async def _get_currentlog():
     cmd = 'get currentlog'
-    response = call_pcu(cmd)
-    currents_raw = _filter_output_payload(response, cmd)
-    currents = [int(c) for c in currents_raw if c]
+    response = await call_pcu(cmd)
+    currents = [int(c) for c in response if c]
     return currents
 
 
 async def get_wakeup_reason() -> WakeupReason:
     cmd = 'get wakeupreason'
-    wr_raw = _filter_output_payload(await call_pcu(cmd), cmd)[0]
+    wr_raw = (await call_pcu(cmd))[0]
     return WakeupReason(wr_raw)
 
 
@@ -249,7 +248,6 @@ async def _send_command(command: Commands, *args):
     output_raw = await call_pcu(command_str)
     if not any([f"{command.value} successful" in output_line for output_line in output_raw]):
         raise RuntimeError
-    retval = _filter_output_payload(output_raw, command_str)
     return output_raw
 
 
@@ -286,8 +284,7 @@ async def _set_date(date_kind: DateKind, date: datetime):
 
 async def _get_date(date_kind: DateKind) -> datetime:
     command = "get date " + date_kind.value
-    date_raw = await call_pcu(command)
-    datestr = _filter_output_payload(pcu_outputs=date_raw, command_sent=command)[0]
+    datestr = (await call_pcu(command))[0]
     return _pcu_timestring_to_datetime(datestr)
 
 
