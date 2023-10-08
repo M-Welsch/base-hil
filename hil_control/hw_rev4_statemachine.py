@@ -18,11 +18,11 @@ class HwRev4Statemachine(Testcase):
         pcu.power(pcu.VoltageRail.fiveV, pcu.DesiredState.off)
 
     def issue_and_verify_shutdown_request(self):
-        outputs = pcu.cmd_shutdown_init()
+        outputs = pcu.cmd.shutdown.init()
         assert any(["shutdown_requested state" in output for output in outputs])
 
     def issue_and_verify_shutdown_abort(self):
-        outputs = pcu.cmd_shutdown_abort()
+        outputs = pcu.cmd.shutdown.abort()
         assert any(["active state" in output for output in outputs])
 
     def run(self, iterations: int) -> None:

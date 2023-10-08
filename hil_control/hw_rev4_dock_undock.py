@@ -84,7 +84,7 @@ class HwRev4DockUndock(Testcase):
 
     def _check_dockingstate(self, good_state: str, maximum_trials: int = 2, delay_between_trials: float = 1):
         trials = 0
-        while not (dockingstate := pcu._get_dockingstate()) == good_state:
+        while not (dockingstate := pcu.get.dockingstate()) == good_state:
             if trials > maximum_trials:
                 raise AssertionError(f"having {dockingstate} instead of {good_state}. Tried {trials} times")
             trials += 1

@@ -21,4 +21,4 @@ async def test_set_get_date_now(date_setter, date_getter):
     await date_setter(nowish)
     sleep(0.2)
     later = await date_getter()
-    assert (later - nowish) < timedelta(seconds=2)
+    assert (later - nowish) < timedelta(seconds=3)

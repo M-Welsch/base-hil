@@ -14,20 +14,20 @@ LOG = logging.getLogger(__name__)
 class cmd:
     class shutdown:
         @staticmethod
-        def init():
-            return cmd_shutdown_init()
+        async def init():
+            return await _send_command(Commands.shutdown, 'init')
 
         @staticmethod
-        def abort():
-            return cmd_shutdown_abort()
+        async def abort():
+            return await _send_command(Commands.shutdown, 'abort')
 
     @staticmethod
-    def dock():
-        return cmd_dock()
+    async def dock():
+        return await _dock_and_verify()
 
     @staticmethod
-    def undock():
-        return cmd_undock()
+    async def undock():
+        return await _undock_and_verify()
 
     class power:
         class hdd:
@@ -60,13 +60,13 @@ class cmd:
 
 class debugcmd:
     @staticmethod
-    def wakeup():
-        return cmd_wakeup()
+    async def wakeup():
+        return await call_pcu('debugcmd wakeup')
 
     @staticmethod
-    def button_pressed(button_id: int):
+    async def button_pressed(button_id: int):
         if button_id < 2:
-            return call_pcu(f'debugcmd button_{button_id}_pressed')
+            return await call_pcu(f'debugcmd button_{button_id}_pressed')
 
 
 class get:
@@ -84,12 +84,20 @@ class get:
             return _get_date(date_kind=DateKind.backup)
 
     @staticmethod
-    def dockingstate():
-        return _get_dockingstate()
+    async def dockingstate():
+        dockingstate = await call_pcu('get dockingstate')
+        return DockingState(dockingstate)
 
     @staticmethod
-    def currentlog():
-        return _get_currentlog()
+    async def currentlog():
+        response = await call_pcu('get currentlog')
+        currents = [int(c) for c in response if c]
+        return currents
+
+    @staticmethod
+    async def wakeup_reason():
+        wr_raw = await call_pcu('get wakeupreason')
+        return WakeupReason(wr_raw)
 
 
     class analog:
@@ -107,12 +115,12 @@ class get:
 
     class digital:
         @staticmethod
-        def endswitch():
-            raise NotImplementedError
+        async def endswitch():
+            return await _get_digital(DigitalMeasurement.UNDOCKED_ENDSWITCH)
 
         @staticmethod
-        def docked():
-            raise NotImplementedError
+        async def docked():
+            return await _get_digital(DigitalMeasurement.DOCKED)
 
 
 class set:
@@ -169,30 +177,24 @@ class AnalogMeasurement(Enum):
     VIN12_MEAS: str = "vin12_meas"
 
 
+async def _get_analog(measurement: AnalogMeasurement) -> int:
+    value_raw = await call_pcu('get analog ' + measurement.value)
+    try:
+        return int(value_raw)
+    except ValueError:
+        return 0
+
+
 class DigitalMeasurement(Enum):
-    HMI_BUTTON_0: str = "HMI_BUTTON_0"
-    HMI_BUTTON_1: str = "HMI_BUTTON_1"
-    UNDOCKED_ENDSWITCH: str = "UNDOCKED_ENDSWITCH"
-    DOCKED: str = "DOCKED"
+    HMI_BUTTON_0: str = "hmi_button_0"
+    HMI_BUTTON_1: str = "hmi_button_1"
+    UNDOCKED_ENDSWITCH: str = "endswitch"
+    DOCKED: str = "docked"
 
 
-async def _get_dockingstate():
-    cmd = 'get dockingstate'
-    outp = await call_pcu(cmd)
-    return DockingState(outp)
-
-
-async def _get_currentlog():
-    cmd = 'get currentlog'
-    response = await call_pcu(cmd)
-    currents = [int(c) for c in response if c]
-    return currents
-
-
-async def get_wakeup_reason() -> WakeupReason:
-    cmd = 'get wakeupreason'
-    wr_raw = await call_pcu(cmd)
-    return WakeupReason(wr_raw)
+async def _get_digital(measurement: DigitalMeasurement) -> bool:
+    result = await call_pcu('get digital ' + measurement.value)
+    return result == 'true'
 
 
 def _filter_output_payload(pcu_outputs: List[str], command_sent: str) -> List[str]:
@@ -228,14 +230,6 @@ async def check_messages(timeout_secs: float) -> Optional[List[str]]:
     return [o.strip() for o in output]
 
 
-async def cmd_dock():
-    return await call_pcu('cmd dock')
-
-
-async def cmd_undock():
-    return await call_pcu('cmd undock')
-
-
 class Commands(Enum):
     shutdown: str = "shutdown"
     dock: str = "dock"
@@ -247,21 +241,21 @@ class Commands(Enum):
 async def _send_command(command: Commands, *args):
     command_str = "cmd " + command.value + ' ' + ' '.join(args)
     output_raw = await call_pcu(command_str)
-    if not f"{command.value} successful" in output_raw:
+    if f"{command.value} successful" not in output_raw:
         raise RuntimeError
     return output_raw
 
 
-async def cmd_shutdown_init():
-    return await _send_command(Commands.shutdown, 'init')
+async def _dock_and_verify():
+    result = await call_pcu('cmd dock')
+    docked = await _get_digital(DigitalMeasurement.DOCKED)
+    return 'successful' in result and docked
 
 
-async def cmd_shutdown_abort():
-    return await _send_command(Commands.shutdown, 'abort')
-
-
-def cmd_wakeup():
-    return call_pcu('debugcmd wakeup')
+async def _undock_and_verify():
+    result = await call_pcu('cmd undock')
+    undocked = await _get_digital(DigitalMeasurement.UNDOCKED_ENDSWITCH)
+    return 'successful' in result and undocked
 
 
 class DateKind(Enum):

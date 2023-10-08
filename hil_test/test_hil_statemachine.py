@@ -10,7 +10,7 @@ async def test_hil_shutdown_init():
     init_outputs = await pcu.cmd.shutdown.init()
     deep_sleep_outputs = await pcu.check_messages(6)
     wakeup_outputs = await pcu.debugcmd.wakeup()
-    wakeup_reason = await pcu.get_wakeup_reason()
+    wakeup_reason = await pcu.get.wakeup_reason()
     assert 'shutdown_requested state' in init_outputs
     assert 'deep_sleep state' in deep_sleep_outputs
     assert 'active state' in wakeup_outputs
@@ -26,21 +26,21 @@ async def test_hil_shutdown_init_and_abort():
     assert 'active state' in abort_outputs
 
 
-@pytest.mark.hardware_in_the_loop
+@pytest.mark.hardware_in_the_loopk
 @pytest.mark.asyncio
 async def test_hil_shutdown_init_with_scheduled_wakeup():
     now = datetime.now()
     later = datetime.now() + timedelta(minutes=1)
     await pcu._set_date(pcu.DateKind.now, now)
     await pcu._set_date(pcu.DateKind.wakeup, later)
-    init_outputs = await pcu.cmd_shutdown_init()
+    init_outputs = await pcu.cmd.shutdown.init()
     deep_sleep_outputs = await pcu.check_messages(6)
     assert 'shutdown_requested state' in init_outputs
     assert 'deep_sleep state' in deep_sleep_outputs
 
     wakeup_outputs = await pcu.check_messages(120)
     assert 'active state' in wakeup_outputs
-    wakeup_reason = await pcu.get_wakeup_reason()
+    wakeup_reason = await pcu.get.wakeup_reason()
     assert wakeup_reason == pcu.WakeupReason.WAKEUP_REASON_SCHEDULED
 
 
@@ -59,5 +59,5 @@ async def test_hil_shutdown_with_wakeup_into_hmi():
     wakeup_outputs = await pcu.debugcmd.wakeup()
     assert 'active state' in wakeup_outputs
 
-    wakeup_reason = await pcu.get_wakeup_reason()
+    wakeup_reason = await pcu.get.wakeup_reason()
     assert wakeup_reason == pcu.WakeupReason.WAKEUP_REASON_USER_REQUEST
